@@ -1,0 +1,13 @@
+.env
+local.md
+.venv/
+node_modules/
+__pycache__/
+out/
+*.mp4
+*.mov
+*.wav
+*.mp3
+*.m4a
+.DS_Store
+.githooks/stop-words.local

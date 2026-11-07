@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ky">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,600;1,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0D0E0F;
+    --ink:#F2F0EA;        /* основной текст — офф-вайт, НЕ чистый белый */
+    --ink-2:#B9B7B0;      /* вторичный */
+    --muted:#6A6A66;      /* приглушённый (хэндл, прогресс) */
+    --lime:#C8FF00;       /* акцент — точечно, ≤15% */
+    --pad:72px;
+    --w:1080px;
+    --h:1350px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#050505;font-family:'Inter',sans-serif}
+  #stage{display:flex;flex-direction:column;gap:40px;padding:40px}
+
+  .slide{
+    position:relative;
+    width:var(--w);height:var(--h);
+    background:var(--bg);
+    padding:var(--pad);
+    display:flex;flex-direction:column;
+    overflow:hidden;
+    color:var(--ink);
+  }
+  /* лёгкая глубина: приглушённое лаймовое свечение в углу */
+  .slide::before{
+    content:"";position:absolute;top:-260px;right:-260px;
+    width:640px;height:640px;border-radius:50%;
+    background:radial-gradient(circle,rgba(200,255,0,.10),transparent 62%);
+    pointer-events:none;
+  }
+  .slide::after{ /* тонкая нижняя лаймовая линия-акцент */
+    content:"";position:absolute;left:var(--pad);bottom:calc(var(--pad) - 26px);
+    width:52px;height:4px;background:var(--lime);opacity:.9;
+  }
+
+  .top{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:2}
+  .kicker{
+    font-family:'JetBrains Mono',monospace;font-weight:600;
+    font-size:26px;letter-spacing:4px;text-transform:uppercase;color:var(--lime);
+  }
+  .progress{
+    font-family:'JetBrains Mono',monospace;font-weight:500;
+    font-size:24px;letter-spacing:2px;color:var(--muted);
+  }
+
+  .content{flex:1;display:flex;flex-direction:column;justify-content:center;position:relative;z-index:2}
+
+  .title{
+    font-family:'Barlow Condensed',sans-serif;font-style:italic;font-weight:700;
+    text-transform:uppercase;line-height:.98;letter-spacing:.5px;
+    font-size:92px;color:var(--ink);
+  }
+  .body{
+    font-family:'Inter',sans-serif;font-weight:400;
+    font-size:34px;line-height:1.46;color:var(--ink-2);
+    margin-top:34px;max-width:880px;
+  }
+
+  /* Обложка (hook) — крупнее всё */
+  .slide.hook .title{font-size:188px;line-height:.9}
+  .slide.hook .body{font-size:46px;line-height:1.28;color:var(--ink);font-weight:500;margin-top:40px;max-width:840px}
+
+  /* Инсайт / решение */
+  .slide.insight .title{font-size:120px}
+  .slide.insight .body{font-size:38px;color:var(--ink)}
+
+  /* CTA */
+  .slide.cta .title{font-size:104px}
+  .slide.cta .body{
+    font-size:38px;color:var(--ink);font-weight:500;
+    border:2px solid rgba(200,255,0,.55);border-left:6px solid var(--lime);
+    padding:30px 34px;border-radius:14px;margin-top:38px;background:rgba(200,255,0,.04);
+  }
+
+  .lime{color:var(--lime);font-weight:700}
+
+  .bottom{display:flex;justify-content:space-between;align-items:flex-end;position:relative;z-index:2}
+  .handle{
+    font-family:'JetBrains Mono',monospace;font-weight:500;
+    font-size:24px;letter-spacing:1px;color:var(--muted);
+  }
+  .hint{
+    font-family:'JetBrains Mono',monospace;font-weight:600;
+    font-size:26px;letter-spacing:1px;color:var(--lime);display:none;align-items:center;gap:12px;
+  }
+  .slide.hook .hint{display:flex}
+  .hint .arw{font-size:34px;line-height:1;transform:translateY(-1px)}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+  function fmt(t){
+    return String(t||'').replace(/\[\[(.+?)\]\]/g,'<span class="lime">$1</span>');
+  }
+  function render(data){
+    const stage=document.getElementById('stage');
+    const total=data.slides.length;
+    data.slides.forEach((s,i)=>{
+      const n=String(i+1).padStart(2,'0');
+      const tot=String(total).padStart(2,'0');
+      const el=document.createElement('section');
+      el.className='slide '+(s.type||'point');
+      el.innerHTML=`
+        <div class="top">
+          <div class="kicker">${fmt(s.kicker||'')}</div>
+          <div class="progress">${n} / ${tot}</div>
+        </div>
+        <div class="content">
+          <h1 class="title">${fmt(s.title||'')}</h1>
+          ${s.body?`<p class="body">${fmt(s.body)}</p>`:''}
+        </div>
+        <div class="bottom">
+          <div class="handle">${data.handle||''}</div>
+          <div class="hint"><span>${fmt(data.hint||'')}</span><span class="arw">→</span></div>
+        </div>`;
+      stage.appendChild(el);
+    });
+    document.body.dataset.count=total;
+  }
+  render(window.__SLIDES__||{slides:[{type:'hook',title:'НЕТ ДАННЫХ',body:'slides.json бош'}]});
+</script>
+</body>
+</html>
