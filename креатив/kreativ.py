@@ -15,6 +15,8 @@
 import argparse, concurrent.futures as cf, json, os, pathlib, re, shutil, ssl, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+import zavod_obshchee as Z  # ключи из ~/.claude/.env, ffmpeg из монтажа, UTF-8 на Windows
 USD = 0.005  # 1 кредит Kie, kie.ai/pricing
 API = "https://api.kie.ai/api/v1"
 UPLOAD = "https://kieai.redpandaai.co/api/file-stream-upload"
@@ -46,15 +48,7 @@ def load(p):
 
 
 def key():
-    k = os.environ.get("KIE_API_KEY", "")
-    env = ROOT / ".env"
-    if not k and env.exists():
-        for line in env.read_text(encoding="utf-8").splitlines():
-            if line.startswith("KIE_API_KEY="):
-                k = line.split("=", 1)[1].split("#")[0].strip()
-    if not k:
-        sys.exit("нет ключа Kie: kie.ai → API Key, вставить в .env строкой KIE_API_KEY=")
-    return k
+    return Z.kluch("KIE_API_KEY", "kie.ai → API Key")
 
 
 def http(url, body=None):
@@ -75,8 +69,11 @@ def balance():
 
 
 def upload(f):
-    out = subprocess.run(["curl", "-sS", "-X", "POST", UPLOAD, "-H", f"Authorization: Bearer {key()}", "-F", f"file=@{f}",
-                          "-F", "uploadPath=images/zavod"], capture_output=True, text=True).stdout
+    # файл через стандартный ввод: путь с кириллицей не попадает в команду curl (Windows curl.exe)
+    with open(f, "rb") as fh:
+        out = subprocess.run(["curl", "-sS", "-X", "POST", UPLOAD, "-H", f"Authorization: Bearer {key()}",
+                              "-F", f"file=@-;filename=ref{pathlib.Path(f).suffix.lower()}", "-F", "uploadPath=images/zavod"],
+                             stdin=fh, capture_output=True).stdout.decode("utf-8", "replace")
     return json.loads(out)["data"]["downloadUrl"]
 
 
@@ -220,7 +217,7 @@ def zaglushka(p, name, out):
         src = ["-f", "lavfi", "-i", f"testsrc2=size={w}x{h}:rate=30:duration=4", "-pix_fmt", "yuv420p"]
     else:
         src = ["-f", "lavfi", "-i", f"gradients=size={w}x{h}:n=3:seed={abs(hash(name)) % 999}", "-frames:v", "1"]
-    subprocess.run(["ffmpeg", "-v", "error", "-y"] + src + [str(out)], check=True)
+    subprocess.run([Z.programma("ffmpeg"), "-v", "error", "-y"] + src + [str(out)], check=True)
     print(f"  ~ {out.name} (заглушка)", flush=True)
     return out
 
@@ -293,7 +290,7 @@ def kadry(p, a):
         lst = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8")
         lst.write("".join(f"file '{f.as_posix()}'\n" for f in fs))
         lst.close()
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst.name, "-frames:v", "1",
+        subprocess.run([Z.programma("ffmpeg"), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst.name, "-frames:v", "1",
                         "-vf", f"scale={w}:-2,tile={min(len(fs), 5)}x{(len(fs) + 4) // 5}:padding=6", str(p / "kadry" / "_list.jpg")], check=True)
         os.unlink(lst.name)
         print("лист на проверку:", p / "kadry" / "_list.jpg")
@@ -357,7 +354,7 @@ def sobrat(p, a):
         shutil.copy(src, pub / src.name)
         el = {"src": f"klipy/{src.name}", "perehod": k.get("perehod", "cut"), "kamera": k.get("kamera", "in" if src.suffix != ".mp4" else "none")}
         if src.suffix == ".mp4":
-            d = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)],
+            d = float(subprocess.run([Z.programma("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)],
                                      capture_output=True, text=True).stdout)
             # клип короче места — замедляем (не сильнее 0,6), длиннее — режем хвост
             if d / nado < 0.6:  # иначе склейки уедут от слов

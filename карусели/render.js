@@ -3,6 +3,7 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 
 (async () => {
   const dataPath = path.resolve(process.argv[2] || 'slides.json');
@@ -17,7 +18,7 @@ const path = require('path');
 
   // прокидываем данные ДО загрузки страницы
   await page.addInitScript((d) => { window.__SLIDES__ = d; }, data);
-  await page.goto('file://' + tpl.replace(/\\/g, '/'));
+  await page.goto(pathToFileURL(tpl).href);  // Windows: file:///C:/…
 
   // ждём шрифты (Google Fonts), иначе слайды отрендерятся дефолтным шрифтом
   try { await page.evaluate(() => document.fonts.ready); } catch (e) {}

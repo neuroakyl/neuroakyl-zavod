@@ -9,6 +9,8 @@ Buffer берёт видео только по ссылке: файл залив
 import argparse, datetime, json, os, pathlib, re, subprocess, sys, time, urllib.error, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+import zavod_obshchee as Z
 API = "https://api.buffer.com"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 CREATE = """mutation($input: CreatePostInput!) { createPost(input: $input) { __typename
@@ -17,15 +19,7 @@ GET = "query($input: PostInput!) { post(input: $input) { id status externalLink 
 
 
 def key():
-    k = os.environ.get("BUFFER_API_KEY", "")
-    env = ROOT / ".env"
-    if not k and env.exists():
-        for line in env.read_text(encoding="utf-8").splitlines():
-            if line.startswith("BUFFER_API_KEY="):
-                k = line.split("=", 1)[1].split("#")[0].strip().strip('"')
-    if not k:
-        sys.exit("нет ключа: publish.buffer.com/settings/api → Personal Access → New Key, вставить в .env строкой BUFFER_API_KEY=")
-    return k
+    return Z.kluch("BUFFER_API_KEY", "publish.buffer.com/settings/api → Personal Access → New Key")
 
 
 def gql(q, v):
@@ -48,21 +42,25 @@ def kanaly():
     return out
 
 
-def curl(args):
-    return subprocess.run(["curl", "-sS", "-A", UA] + args, capture_output=True, text=True, timeout=900).stdout.strip()
+def curl(args, fail=None):
+    """fail — файл, который curl читает со стандартного ввода (`@-`): путь с кириллицей не попадает в команду (Windows curl.exe)."""
+    if fail is None:
+        return subprocess.run(["curl", "-sS", "-A", UA] + args, capture_output=True, text=True, timeout=900).stdout.strip()
+    with open(fail, "rb") as f:
+        return subprocess.run(["curl", "-sS", "-A", UA] + args, stdin=f, capture_output=True, timeout=900).stdout.decode("utf-8", "replace").strip()
 
 
 def zalit(video):
     """Публичная ссылка на видео: перебор временных хостингов, проверка, что ссылка отдаёт видео."""
     def litterbox():
-        u = curl(["-F", "reqtype=fileupload", "-F", "time=72h", "-F", f"fileToUpload=@{video}", "https://litterbox.catbox.moe/resources/internals/api.php"])
+        u = curl(["-F", "reqtype=fileupload", "-F", "time=72h", "-F", f"fileToUpload=@-;filename=video{pathlib.Path(video).suffix or '.mp4'}", "https://litterbox.catbox.moe/resources/internals/api.php"], video)
         return u if u.startswith("https://") else ""
 
     def uguu():
-        return json.loads(curl(["-F", f"files[]=@{video}", "https://uguu.se/upload"]))["files"][0]["url"]
+        return json.loads(curl(["-F", f"files[]=@-;filename=video{pathlib.Path(video).suffix or '.mp4'}", "https://uguu.se/upload"], video))["files"][0]["url"]
 
     def tmpfiles():
-        u = json.loads(curl(["-F", f"file=@{video}", "https://tmpfiles.org/api/v1/upload"]))["data"]["url"]
+        u = json.loads(curl(["-F", f"file=@-;filename=video{pathlib.Path(video).suffix or '.mp4'}", "https://tmpfiles.org/api/v1/upload"], video))["data"]["url"]
         return u.replace("http://", "https://").replace("tmpfiles.org/", "tmpfiles.org/dl/", 1)
 
     for fn in (litterbox, uguu, tmpfiles):
