@@ -1,11 +1,12 @@
 #!/bin/bash
 # Чистая установка завода на «новом ученике» (поддельный HOME) — Mac/Linux. Windows так не проверить: см. тест-windows.md.
 # Запуск: bash test/chistaya-ustanovka.sh <пустая папка> <папка пакета umnyi-claude> <папка с копиями montazh и instagram-parser>
-#   третий аргумент — локальные git-копии вместо GitHub (install.py --istochnik); без него качается с GitHub.
+#   третий аргумент — локальные git-копии монтажа и парсера (install.py --istochnik); без него они с GitHub;
+#   «github» — и сам завод клонируется с GitHub (проверка того, что получит ученик).
 # Денег не тратит: генерации и Apify — заглушки (--fake). Сеть нужна для pip, Node и npm (кэши берутся с настоящего HOME).
 set -u
 ZAVOD="$(cd "$(dirname "$0")/.." && pwd)"
-BAZA="${1:?пустая папка}"; UMNYI="${2:?папка пакета umnyi-claude}"; SRC="${3:-}"
+BAZA="${1:?пустая папка}"; UMNYI="${2:?папка или ссылка пакета umnyi-claude}"; SRC="${3:-}"
 mkdir -p "$BAZA"; BAZA="$(cd "$BAZA" && pwd)"
 REAL_HOME="$HOME"
 export PIP_CACHE_DIR="$REAL_HOME/Library/Caches/pip" npm_config_cache="$REAL_HOME/.npm"
@@ -19,10 +20,15 @@ echo "== 1. Умный Claude"
 git clone -q "$UMNYI" "$HOME/.claude/umnyi"
 py "$HOME/.claude/umnyi/install.py" --tiho && pass "пакет поставлен" || nope "пакет"
 
-echo "== 2. Завод (как git clone: только файлы репозитория)"
-mkdir -p "$HOME/.claude/skills/zavod"
-(cd "$ZAVOD" && git ls-files -co --exclude-standard -z | rsync -a --from0 --files-from=- ./ "$HOME/.claude/skills/zavod/")
 Z="$HOME/.claude/skills/zavod"
+if [ "$SRC" = "github" ]; then  # всё с GitHub, как у ученика: завод, монтаж, парсер
+  echo "== 2. Завод с GitHub"; SRC=""
+  git clone -q --depth 1 https://github.com/neuroakyl/neuroakyl-zavod "$Z" && pass "завод скачан с GitHub" || nope "git clone завода"
+else
+  echo "== 2. Завод (как git clone: только файлы репозитория)"
+  mkdir -p "$Z"
+  (cd "$ZAVOD" && git ls-files -co --exclude-standard -z | rsync -a --from0 --files-from=- ./ "$Z/")
+fi
 ARGS=(--chasti montazh,parser,karuseli --bez-paka); [ -n "$SRC" ] && ARGS+=(--istochnik "$SRC")
 py "$Z/install.py" "${ARGS[@]}" > "$BAZA/install.log" 2>&1 && pass "install.py завода" || { nope "install.py завода"; tail -30 "$BAZA/install.log"; }
 py "$Z/install.py" --chasti parser > "$BAZA/install2.log" 2>&1 && pass "повторный install.py" || nope "повторный install.py"
