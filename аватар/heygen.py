@@ -1,109 +1,121 @@
 """Аватар HeyGen: точные настройки вызова и проверка темпа. Mac и Windows, только стандартная библиотека.
 
-Коннектор HeyGen вызывает Claude, а настройки берёт отсюда. Руками их не собирай: без явного движка голоса HeyGen сам выбирает
-движок для клона, и кыргызский выходит с акцентом (было у двух учеников подряд).
+Коннектор HeyGen вызывает Claude, а настройки берёт отсюда. Руками их не собирай.
 
-  py heygen.py parametry --avatar LOOK_ID --voice VOICE_ID [--lang ky] [--format vertical|horizontal]
-                         [--dvizhok iii|iv|v|6] [--skorost 1.2] [--papka ПАПКА_РОЛИКА] [--tekst сценарий.txt]
-        → JSON для create_video_from_avatar. С --papka ещё и ПАПКА/heygen.json (что заказали, для истории).
-        Без --tekst поле script пустое: Claude вставляет утверждённый текст дословно.
+Схема (с 12.11.2026): сначала голос целиком, потом Avatar V только на куски, где видно лицо (≤30% ролика), остальное — Б-роллы.
+Avatar III и IV в кадр не идут: картинка у них неживая. III нужен только как дешёвый способ получить голос.
+
+  py heygen.py test  --avatar LOOK --voice VOICE [--lang ky] [--format vertical|horizontal] [--papka ПАПКА]
+        → проба 5–10 с целиком на Avatar V: человек слушает голос и смотрит, живой ли аватар. Один раз, до первого ролика.
+  py heygen.py golos --avatar LOOK --voice VOICE [--lang ky] [--format …] [--papka ПАПКА]
+        → голос всего сценария. Рендер на Avatar III, но **из видео берём только звук**, картинку выкидываем.
+          Для ky другого пути в HeyGen нет: create_speech кыргызский не знает (только HeyGen Voice, ky нет в списке).
+  py heygen.py lico  --avatar LOOK --audio ASSET_ID [--format …]
+        → кусок с лицом на Avatar V по готовому звуку (mp3-кусок из segs.py): голос не пересчитывается, губы совпадают.
   py heygen.py temp ФАЙЛ.srt [--lang ky]
-        → слов в секунду по субтитрам HeyGen и вердикт: темп нормальный или ускорить на монтаже (команда ffmpeg).
+        → слов в секунду по субтитрам и вердикт: темп нормальный или ускорить на монтаже.
 
-Проверено 16.11.2026 по get_video_voice_capabilities: для кыргызского (ky) у HeyGen есть только движок elevenlabs,
-модели eleven_v3 и eleven_v4, без акцента-locale. eleven_v4 звучит живее v3 (наша проверка 21.10.2026).
+Без --tekst поле script пустое: Claude вставляет утверждённый текст дословно. С --papka JSON пишется ещё и в ПАПКА/heygen-<режим>.json.
+
+Проверено 16.11.2026 по get_video_voice_capabilities: для ky у HeyGen только движок elevenlabs, модели eleven_v3/eleven_v4, без locale.
+Без engine_settings HeyGen выбирает движок клона сам — у учеников выходил акцент. eleven_v4 живее v3 (наша проверка 21.10.2026).
 """
 import argparse, json, pathlib, re, sys
 
-# Язык → движок голоса. ky: другого у HeyGen нет. Для остальных eleven_v4 — тоже лучший из проверенных нами.
-DVIZHOK_GOLOSA = {
-    "ky": {"engine_type": "elevenlabs", "model": "eleven_v4"},
-    "ru": {"engine_type": "elevenlabs", "model": "eleven_v4"},
-    "kk": {"engine_type": "elevenlabs", "model": "eleven_v4"},
-    "uz": {"engine_type": "elevenlabs", "model": "eleven_v4"},
-    "en": {"engine_type": "elevenlabs", "model": "eleven_v4"},
-}
-DVIZHOK_AVATARA = {"iii": "avatar_iii", "iv": "avatar_iv", "v": "avatar_v", "6": "heygen-avatar-6-turbo"}
+DVIZHOK_GOLOSA = {l: {"engine_type": "elevenlabs", "model": "eleven_v4"} for l in ("ky", "ru", "kk", "uz", "en")}
 FORMAT = {"vertical": "9:16", "horizontal": "16:9"}
-# Ориентир, кредитов за минуту (замеры и справка HeyGen, октябрь–ноябрь 2026). Точная цена — в HeyGen перед генерацией.
-KREDITY_MIN = {"iii": 4, "iv": 31, "v": 48, "6": None}
-# Нормальный темп речи в Reels, слов в секунду (кыргызские слова длиннее русских).
-NORMA = {"ky": 2.2, "ru": 2.6}
+DVIZHENIE = "calm, natural, small occasional hand gestures, looks into the camera"
+NORMA = {"ky": 2.2, "ru": 2.6}  # нормальный темп в Reels, слов в секунду
 
 
-def parametry(a):
+def golos_nastroiki(a):
     if a.lang not in DVIZHOK_GOLOSA:
         sys.exit(f"Язык {a.lang}: движок не проверен. Посмотри get_video_voice_capabilities и допиши DVIZHOK_GOLOSA.")
-    if not 0.5 <= a.skorost <= 1.5:
-        sys.exit("Скорость HeyGen — от 0.5 до 1.5.")
-    p = {
-        "avatarId": a.avatar,
-        "voiceId": a.voice,
-        "script": pathlib.Path(a.tekst).read_text(encoding="utf-8").strip() if a.tekst else "",
-        "engine": {"type": DVIZHOK_AVATARA[a.dvizhok]},
-        "aspectRatio": FORMAT[a.format],
-        "resolution": "1080p",
-        "caption": {"file_format": "srt"},
-        "voiceSettings": {
-            "speed": a.skorost,
-            "engine_settings": dict(DVIZHOK_GOLOSA[a.lang]),
-            # locale не задаём: «оригинальный акцент» голоса. Задать en-US и т.п. — и кыргызский поплывёт.
-        },
-    }
-    zametki = [
-        "engine_settings обязателен: без него HeyGen выберет движок сам — акцент.",
-        "caption без style: субтитры отдельным файлом, в видео не вшиваются (монтаж ставит свои).",
-        "resolution 1080p явно: без него Avatar III/IV/V отдают 720p.",
-        f"Движок аватара {a.dvizhok.upper()} явно: по умолчанию HeyGen берёт Avatar 6 Turbo, его цену и вид мы ещё не проверяли.",
-        "Ссылки get_video живут ~7 дней: mp4 и srt скачать сразу.",
-        "Скорость в настройках HeyGen применяется не всегда: после рендера — heygen.py temp ФАЙЛ.srt.",
-    ]
-    k = KREDITY_MIN[a.dvizhok]
-    if k:
-        zametki.append(f"Ориентир цены: около {k} кр. за минуту ролика. Перед первым роликом сверить в HeyGen.")
-    out = {"create_video_from_avatar": p, "zametki": zametki}
-    txt = json.dumps(out, ensure_ascii=False, indent=2)
-    if a.papka:
-        f = pathlib.Path(a.papka) / "heygen.json"
+    # locale не задаём: «оригинальный акцент» голоса. Любой locale ломает кыргызский.
+    return {"speed": a.skorost, "engine_settings": dict(DVIZHOK_GOLOSA[a.lang])}
+
+
+def tekst(a):
+    return pathlib.Path(a.tekst).read_text(encoding="utf-8").strip() if getattr(a, "tekst", None) else ""
+
+
+def vyvod(a, rezhim, p, zametki):
+    txt = json.dumps({"create_video_from_avatar": p, "zametki": zametki}, ensure_ascii=False, indent=2)
+    if getattr(a, "papka", None):
+        f = pathlib.Path(a.papka) / f"heygen-{rezhim}.json"
         f.write_text(txt + "\n", encoding="utf-8")
         print(f"записал {f}", file=sys.stderr)
     print(txt)
 
 
+def test(a):
+    p = {"avatarId": a.avatar, "voiceId": a.voice, "script": tekst(a), "engine": {"type": "avatar_v"},
+         "motionPrompt": DVIZHENIE, "aspectRatio": FORMAT[a.format], "resolution": "1080p",
+         "caption": {"file_format": "srt"}, "voiceSettings": golos_nastroiki(a)}
+    vyvod(a, "test", p, [
+        "Текст пробы — 1–2 фразы на 5–10 с, язык человека. Avatar V ≈1 кр./с: проба стоит около 7–10 кр.",
+        "Человек слушает голос (похож, без акцента, темп) и смотрит лицо (живое, губы попадают). Вердикт — в local.md.",
+        "Проба целиком на V только здесь. В роликах V идёт кусками на лицо: режимы golos → lico.",
+    ])
+
+
+def golos(a):
+    p = {"avatarId": a.avatar, "voiceId": a.voice, "script": tekst(a), "engine": {"type": "avatar_iii"},
+         "aspectRatio": FORMAT[a.format], "resolution": "720p", "caption": {"file_format": "srt"},
+         "voiceSettings": golos_nastroiki(a)}
+    vyvod(a, "golos", p, [
+        "Это проход ТОЛЬКО ЗА ГОЛОСОМ. Картинку Avatar III в ролик не ставить: она неживая.",
+        "Из mp4 достать звук: ffmpeg -i golos.mp4 -vn -ac 1 -ar 44100 -b:a 192k golos.mp3 (HeyGen берёт mp3, m4a — нет).",
+        "srt проверить темп: heygen.py temp. Слова для монтажа и нарезки — words.json из srt или words.py.",
+        "Дальше: план кадров → куски с лицом (≤30% ролика) → montazh segs.py режет mp3 → режим lico на каждый кусок.",
+        "720p достаточно: картинка не нужна. Ссылки get_video живут ~7 дней — скачать сразу.",
+    ])
+
+
+def lico(a):
+    p = {"avatarId": a.avatar, "audioAssetId": a.audio, "engine": {"type": "avatar_v"}, "motionPrompt": DVIZHENIE,
+         "aspectRatio": FORMAT[a.format], "resolution": "1080p"}
+    vyvod(a, "lico", p, [
+        "audioAssetId: mp3-кусок из segs.py → create_asset_upload → PUT → complete_asset_upload. Голос и скорость задаёт сам звук.",
+        "Длина куска = длина звука, губы совпадают. Готовые куски — в ПАПКА/v/N.mp4, сборка поверх голоса — montazh compose.py.",
+        "Avatar V ≈1 кр./с куска: до генерации segs.py считает долю лица и кредиты, больше 30% — резать план.",
+    ])
+
+
 def temp(a):
     t = pathlib.Path(a.srt).read_text(encoding="utf-8", errors="ignore")
-    vremya = re.findall(r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)", t)
-    if not vremya:
+    vr = re.findall(r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)", t)
+    if not vr:
         sys.exit("В файле нет таймингов SRT.")
     sek = lambda h, m, s, ms: int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
-    nachalo, konec = sek(*vremya[0][:4]), sek(*vremya[-1][4:])
-    stroki = [s for s in t.splitlines() if s.strip() and not s.strip().isdigit() and "-->" not in s]
-    slov = sum(len(re.findall(r"\w+", s)) for s in stroki)
-    dlit = max(konec - nachalo, 0.1)
-    v = slov / dlit
-    norma = NORMA.get(a.lang, 2.6)
+    dlit = max(sek(*vr[-1][4:]) - sek(*vr[0][:4]), 0.1)
+    slov = sum(len(re.findall(r"\w+", s)) for s in t.splitlines() if s.strip() and not s.strip().isdigit() and "-->" not in s)
+    v, norma = slov / dlit, NORMA.get(a.lang, 2.6)
     print(f"{slov} слов за {dlit:.1f} с → {v:.2f} слова/с (норма для {a.lang}: от {norma})")
     if v >= norma:
-        print("Темп нормальный, на монтаже не ускорять.")
+        print("Темп нормальный, не ускорять.")
     else:
         k = min(round(norma / v, 2), 1.25)
-        print(f"Медленно. Ускорить на монтаже ×{k} (больше ×1.25 звучит неестественно), потом послушать:")
-        print(f'  ffmpeg -i avatar.mp4 -filter_complex "[0:v]setpts=PTS/{k}[v];[0:a]atempo={k}[a]" -map "[v]" -map "[a]" avatar-x{k}.mp4')
-        print(f"Тайминги слов после ускорения делить на {k}.")
+        print(f"Медленно. Ускорить голос ×{k} (больше ×1.25 звучит неестественно) ДО нарезки на куски, потом послушать:")
+        print(f"  ffmpeg -i golos.mp3 -af atempo={k} golos-x{k}.mp3   и тайминги слов делить на {k}.")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("parametry")
-    p.add_argument("--avatar", required=True); p.add_argument("--voice", required=True)
-    p.add_argument("--lang", default="ky"); p.add_argument("--format", choices=FORMAT, default="vertical")
-    p.add_argument("--dvizhok", choices=DVIZHOK_AVATARA, default="iii"); p.add_argument("--skorost", type=float, default=1.2)
-    p.add_argument("--papka"); p.add_argument("--tekst")
-    t = sub.add_parser("temp")
-    t.add_argument("srt"); t.add_argument("--lang", default="ky")
+    for imya in ("test", "golos"):
+        p = sub.add_parser(imya)
+        p.add_argument("--avatar", required=True); p.add_argument("--voice", required=True)
+        p.add_argument("--lang", default="ky"); p.add_argument("--skorost", type=float, default=1.2)
+        p.add_argument("--format", choices=FORMAT, default="vertical"); p.add_argument("--papka"); p.add_argument("--tekst")
+    p = sub.add_parser("lico")
+    p.add_argument("--avatar", required=True); p.add_argument("--audio", required=True)
+    p.add_argument("--format", choices=FORMAT, default="vertical"); p.add_argument("--papka")
+    t = sub.add_parser("temp"); t.add_argument("srt"); t.add_argument("--lang", default="ky")
     a = ap.parse_args()
-    parametry(a) if a.cmd == "parametry" else temp(a)
+    if not 0.5 <= getattr(a, "skorost", 1.0) <= 1.5:
+        sys.exit("Скорость HeyGen — от 0.5 до 1.5.")
+    {"test": test, "golos": golos, "lico": lico, "temp": temp}[a.cmd](a)
 
 
 if __name__ == "__main__":
