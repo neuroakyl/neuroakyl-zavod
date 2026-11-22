@@ -20,6 +20,14 @@ const { pathToFileURL } = require('url');
   await page.addInitScript((d) => { window.__SLIDES__ = d; }, data);
   await page.goto(pathToFileURL(tpl).href);  // Windows: file:///C:/…
 
+  // цвета бренда человека — из slides.json ("cveta": {"bg": "#111", "lime": "#C8FF00"}), а не правкой template.html:
+  // правка файлов навыка ломает обновление завода у ученика
+  if (data.cveta) {
+    await page.evaluate((c) => {
+      for (const [k, v] of Object.entries(c)) document.documentElement.style.setProperty(k.startsWith('--') ? k : '--' + k, v);
+    }, data.cveta);
+  }
+
   // ждём шрифты (Google Fonts), иначе слайды отрендерятся дефолтным шрифтом
   try { await page.evaluate(() => document.fonts.ready); } catch (e) {}
   await page.waitForTimeout(600);

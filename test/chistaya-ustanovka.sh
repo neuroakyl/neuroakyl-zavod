@@ -66,9 +66,15 @@ py "$Z/креатив/kreativ.py" sobrat "$K" --dvizhok "$RK/движок" > /de
   && [ -s "$RK/креатив.mp4" ] && pass "креатив собран и отрендерен: $RK/креатив.mp4" || { nope "креатив → монтаж"; tail -20 "$BAZA/kreativ.log"; }
 
 echo "== 6. Конкуренты на заглушках"
-py "$Z/конкуренты/konkurenty.py" poisk "фитнес для мам" --fake --skolko 6 > /dev/null \
+py "$Z/конкуренты/konkurenty.py" poisk "фитнес тренер онлайн" --fake --skolko 6 > /dev/null \
   && py "$Z/конкуренты/konkurenty.py" sbor proba_00 proba_01 --fake --rilsov 15 > /dev/null \
   && py "$Z/конкуренты/konkurenty.py" reiting > /dev/null && ls "$HOME/Projects/завод/конкуренты/"рейтинг-*.md > /dev/null && pass "конкуренты: поиск, сбор, рейтинг" || nope "конкуренты"
-py "$Z/конкуренты/konkurenty.py" sbor proba_09 2>&1 | grep -q "только с --da" && pass "без --da денег не тратит" || nope "потолок денег"
+py "$Z/конкуренты/konkurenty.py" sbor proba_09 2>&1 | grep -q "сначала отбор" && pass "без утверждённого отбора конкурентов денег не тратит" || nope "отбор перед сбором"
+py "$Z/конкуренты/konkurenty.py" sbor proba_09 --svoi 2>&1 | grep -q "только с --da" && pass "без --da денег не тратит" || nope "потолок денег"
+PL="$HOME/Projects/завод/планы"; mkdir -p "$PL"
+printf '%s' '{"mesyac":"2026-12","edinicy":[{"id":"R01","format":"reels","data":"2026-12-01","cel":"охват","tema":"т","huk":"Бир күндө он ролик.","huk_zapas":["а","б"],"yazyk":"ky","prizyv":"СӨЗ"},{"id":"T01","format":"threads","data":"2026-12-01","cel":"сообщество","tekst":"пост","yazyk":"ru"}]}' > "$PL/план-2026-12.json"
+py "$Z/план/plan.py" dalshe 2>&1 | grep -q "не утверждён" && py "$Z/план/plan.py" proverit > /dev/null && py "$Z/план/plan.py" da > /dev/null \
+  && py "$Z/план/plan.py" dalshe --format reels | grep -q '"R01"' && ls "$PL/план-2026-12.md" > /dev/null \
+  && pass "контент-план: без «да» не выдаёт, после «да» даёт следующий пункт" || nope "контент-план очередью"
 
 echo; echo "ИТОГ: ✓ $ok, ✗ $fail"; [ "$fail" = 0 ]
