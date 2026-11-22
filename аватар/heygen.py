@@ -20,7 +20,7 @@
         → какие куски идут на лицо, доля, кредиты, команда segs.py. Без --words — оценка по тексту, без генерации.
   py heygen.py zagruzka ПАПКА_КУСКОВ           → JSON для create_asset_upload_batch (точные size_bytes и тип mp3).
   py heygen.py put ОТВЕТ.json --papka ПАПКА_КУСКОВ → PUT каждого mp3 по upload_url с заголовками HeyGen, потом complete_asset_batch.
-  py heygen.py lico --aktivy ОТВЕТ.json | --audio ASSET_ID [--model 6turbo|6pro|v] → вызовы лица по готовому звуку.
+  py heygen.py lico --aktivy ОТВЕТ.json | --audio ASSET_ID [--model 6turbo|6pro] → вызовы лица по готовому звуку.
 
 Проверено 22.11.2026 по коннектору: get_video_voice_capabilities — для ky только elevenlabs (eleven_v3/v4), без locale;
 create_video_from_avatar по умолчанию берёт Avatar 6 Turbo; list_voices показывает только голоса HeyGen Voice (кыргызский не знают),
@@ -42,10 +42,10 @@ NORMA = {"ky": 2.2, "ru": 2.6}  # нормальный темп в Reels, сло
 SKOROST = 1.2                   # скорость голоса в HeyGen (применяется не всегда — потом temp)
 # модель лица: engine для create_video_from_avatar и кредиты за минуту (help.heygen.com, проверено 22.11.2026)
 MODELI = {
-    "6turbo": ({"type": "heygen-avatar-6-turbo"}, 20, "Avatar 6 Turbo — по умолчанию: новее и живее V, в 2,4 раза дешевле, есть на Creator"),
-    "6pro": ({"type": "heygen-avatar-6"}, 40, "Avatar 6 Pro — качество выше, кредитов вдвое больше; только тариф Pro и выше"),
-    "v": ({"type": "avatar_v"}, 60, "Avatar V — прошлое поколение; 48 кр./мин по справке, наш замер ≈1 кр./с"),
+    "6turbo": ({"type": "heygen-avatar-6-turbo"}, 20, "Avatar 6 Turbo — по умолчанию: на глаз как 6 Pro и живее V, вдвое дешевле Pro, есть на Creator"),
+    "6pro": ({"type": "heygen-avatar-6"}, 40, "Avatar 6 Pro — по прайсу вдвое дороже, на глаз разницы с Turbo нет (тест 22.11); только тариф Pro и выше"),
 }
+# Avatar V, IV, III в кадр не ставим (Бобби, 22.11.2026: «только последние модели — Avatar 6»). III — только проход за голосом.
 GOLOS_KR_MIN = 4                # Avatar III, видео-образ: кредитов за минуту прохода за голосом
 NASTROIKI = lambda: zavod() / "аватар.json"
 clean = lambda s: re.sub(r"[^a-zа-яёңөүәіұқғһ0-9]", "", s.lower())  # как в montazh segs.py
@@ -129,8 +129,7 @@ def vyvod(a, rezhim, p, zametki):
 def litso(a, p):
     eng, _, _ = MODELI[model(a)]
     p.update({"engine": dict(eng), "motionPrompt": DVIZHENIE, "resolution": "1080p"})
-    if model(a) != "v":
-        p["motionExpressiveness"] = "less"
+    p["motionExpressiveness"] = "less"
     return p
 
 

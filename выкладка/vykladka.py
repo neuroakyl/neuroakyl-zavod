@@ -18,6 +18,14 @@ CREATE = """mutation($input: CreatePostInput!) { createPost(input: $input) { __t
 GET = "query($input: PostInput!) { post(input: $input) { id status externalLink error { message } } }"
 
 
+def bez_heshtegov(t: str) -> str:
+    """Подписи без хэштегов (мешают охвату). Вырезаем в коде, вернуть — флаг --heshtegi."""
+    t = re.sub(r"(?<!\S)#[\w]+", "", t)
+    t = re.sub(r"[ \t]{2,}", " ", t)
+    t = re.sub(r"[ \t]+\n", "\n", t)
+    return re.sub(r"\n{3,}", "\n\n", t).strip()
+
+
 def key():
     return Z.kluch("BUFFER_API_KEY", "publish.buffer.com/settings/api → Personal Access → New Key")
 
@@ -89,6 +97,8 @@ def post(a):
     if not c:
         sys.exit(f"канал {a.kanal} не подключён. Есть: {', '.join(x['service'] for x in ch)}")
     text = pathlib.Path(a.text).read_text(encoding="utf-8").strip()
+    if not getattr(a, "heshtegi", False):
+        text = bez_heshtegov(text)
     url = zalit(a.video)
     print("видео залито:", url)
     item = {"channelId": c["id"], "text": text, "assets": [{"video": {"url": url, "metadata": {"thumbnailOffset": 0}}}], "metadata": meta(a.kanal, text, a.title, a.ai),
@@ -120,7 +130,7 @@ ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDe
 sub = ap.add_subparsers(dest="cmd", required=True)
 sub.add_parser("kanaly")
 p = sub.add_parser("post")
-p.add_argument("video"); p.add_argument("--text", required=True); p.add_argument("--kanal", required=True)
+p.add_argument("video"); p.add_argument("--text", required=True); p.add_argument("--kanal", required=True); p.add_argument("--heshtegi", action="store_true", help="оставить хэштеги")
 p.add_argument("--kogda"); p.add_argument("--tz", default="+00:00"); p.add_argument("--title"); p.add_argument("--ai", action="store_true", help="поставить площадкам метку «сделано ИИ»")
 A = ap.parse_args()
 if A.cmd == "kanaly":
