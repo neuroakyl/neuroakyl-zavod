@@ -1,7 +1,9 @@
 """Ролик: папка, движок монтажа, черновик на заглушках. Mac и Windows, только стандартная библиотека.
 
-  py rolik.py new "тема" [--tip bez-lica|avatar|zhivoe|kreativ] [--format vertical|horizontal]
+  py rolik.py new "тема" [--tip bez-lica|avatar|zhivoe|kreativ] [--format vertical|horizontal] [--data ГГГГ-ММ-ДД] [--id R05]
         → Projects/завод/ролики/ГГГГ-ММ-ДД-тема/: ролик.json, сценарий.md, исходники/, движок/ (копия шаблона монтажа)
+        дата в имени — день выхода из плана (--data), иначе сегодня; монтажа ещё нет — папка без движка, сценарий писать можно
+  py rolik.py dvizhok ПАПКА        доложить движок монтажа в папку, созданную без него
   py rolik.py zaglushka ПАПКА      черновик без денег и без ключей: голос-заглушка, кадры-заглушки, подписи → черновик.mp4
   py rolik.py render ПАПКА [ИМЯ]   рендер того, что лежит в движок/src/montazh.json → ПАПКА/ИМЯ.mp4
 
@@ -38,23 +40,41 @@ def ssylka_na_papku(cel, gde):
         gde.symlink_to(cel, target_is_directory=True)
 
 
-def new(a):
+def dvizhok_v(p, fmt):
     if not (SHABLON / "src" / "montazh.json").exists():
-        sys.exit(f"нет движка монтажа ({SHABLON}): поставь его — `install.py --chasti montazh`")
-    tema = " ".join(a.chto).strip() or "проба"
-    p = Z.zavod() / "ролики" / f"{datetime.date.today().isoformat()}-{slug(tema)}"
-    if p.exists():
-        sys.exit(f"{p} уже есть")
-    (p / "исходники").mkdir(parents=True)
+        return False
     shutil.copytree(SHABLON, p / "движок", ignore=shutil.ignore_patterns("node_modules", "out", ".cache", "*.mp4"))
     ssylka_na_papku(SHABLON / "node_modules", p / "движок" / "node_modules")
     m = json.loads((p / "движок" / "src" / "montazh.json").read_text(encoding="utf-8"))
-    m.update({"format": a.format, "klipy": []})
+    m.update({"format": fmt, "klipy": []})
     (p / "движок" / "src" / "montazh.json").write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
-    (p / "ролик.json").write_text(json.dumps({"tema": tema, "tip": a.tip, "format": a.format, "status": "сценарий"},
+    return True
+
+
+def dvizhok(a):
+    p = pathlib.Path(" ".join(a.chto)).expanduser()
+    if (p / "движок").exists():
+        sys.exit(f"движок уже в {p}")
+    fmt = json.loads((p / "ролик.json").read_text(encoding="utf-8")).get("format", "vertical") if (p / "ролик.json").exists() else a.format
+    if not dvizhok_v(p, fmt):
+        sys.exit(f"нет движка монтажа ({SHABLON}): поставь его — `install.py --chasti montazh`")
+    print(f"✓ движок в {p / 'движок'}")
+
+
+def new(a):
+    tema = " ".join(a.chto).strip() or "проба"
+    den = a.data or datetime.date.today().isoformat()
+    p = Z.zavod() / "ролики" / f"{den}-{slug(tema)}"
+    if p.exists():
+        sys.exit(f"{p} уже есть")
+    (p / "исходники").mkdir(parents=True)
+    est_dvizhok = dvizhok_v(p, a.format)
+    (p / "ролик.json").write_text(json.dumps({"tema": tema, "tip": a.tip, "format": a.format, "status": "сценарий", "id": a.id, "data": den},
                                              ensure_ascii=False, indent=1), encoding="utf-8")
     (p / "сценарий.md").write_text(f"# {tema}\n\nФормат: {TIPY[a.tip]}, {a.format}.\n\n## Текст\n\n## Разметка под монтаж\n", encoding="utf-8")
     print(f"ролик: {p}\n  формат: {TIPY[a.tip]}, {a.format}\n  дальше: сценарий (модуль `сценарий.md`), потом путь формата из SKILL.md")
+    if not est_dvizhok:
+        print("  ! движка монтажа нет: сценарий писать можно, перед монтажом — install.py --chasti montazh и rolik.py dvizhok <папка>")
 
 
 def ff(*args):
@@ -119,9 +139,11 @@ def render(a, imya=None):
 
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-ap.add_argument("cmd", choices=["new", "zaglushka", "render"])
+ap.add_argument("cmd", choices=["new", "dvizhok", "zaglushka", "render"])
 ap.add_argument("chto", nargs="*")
 ap.add_argument("--tip", default="bez-lica", choices=list(TIPY))
 ap.add_argument("--format", default="vertical", choices=list(SIZE))
+ap.add_argument("--data")
+ap.add_argument("--id")
 A = ap.parse_args()
-{"new": new, "zaglushka": zaglushka, "render": render}[A.cmd](A)
+{"new": new, "dvizhok": dvizhok, "zaglushka": zaglushka, "render": render}[A.cmd](A)

@@ -67,7 +67,7 @@ py "$Z/креатив/kreativ.py" sobrat "$K" --dvizhok "$RK/движок" > /de
 
 echo "== 6. Конкуренты на заглушках"
 py "$Z/конкуренты/konkurenty.py" poisk "фитнес тренер онлайн" --fake --skolko 6 > /dev/null \
-  && py "$Z/конкуренты/konkurenty.py" sbor proba_00 proba_01 --fake --rilsov 15 > /dev/null \
+  && py "$Z/конкуренты/konkurenty.py" sbor proba_00 proba_01 --fake --svoi --rilsov 15 > /dev/null \
   && py "$Z/конкуренты/konkurenty.py" reiting > /dev/null && ls "$HOME/Projects/завод/конкуренты/"рейтинг-*.md > /dev/null && pass "конкуренты: поиск, сбор, рейтинг" || nope "конкуренты"
 py "$Z/конкуренты/konkurenty.py" sbor proba_09 2>&1 | grep -q "сначала отбор" && pass "без утверждённого отбора конкурентов денег не тратит" || nope "отбор перед сбором"
 py "$Z/конкуренты/konkurenty.py" sbor proba_09 --svoi 2>&1 | grep -q "только с --da" && pass "без --da денег не тратит" || nope "потолок денег"

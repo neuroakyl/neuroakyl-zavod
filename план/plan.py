@@ -9,7 +9,7 @@
   py plan.py sdvig N [--format reels]                  сдвинуть даты всего невышедшего на N дней (пропустили дни)
   py plan.py status                                    сколько чего на каком шаге и что дальше
 
-План: Projects/завод/планы/план-ГГГГ-ММ.json (берётся самый новый). Форматы: reels, karusel, threads, storis.
+План: Projects/завод/планы/план-ГГГГ-ММ.json (берётся самый новый). Поле "gipotezy": [..] — что взято не из мозга, видно в таблице. Форматы: reels, karusel, threads, storis.
 Статусы: plan → v-ocheredi (после «da») → scenariy → gotov → zaplanirovan → vyshel; snyat — убран из плана.
 «dalshe» без «да» человека ничего не выдаёт: это в коде, не в обещаниях. Вышедшее пишется строкой в мозг/снятое.md.
 """
@@ -97,8 +97,16 @@ def oshibki(p):
             if k and k in temy:
                 osh.append(f"{i}: та же тема, что {temy[k]}")
             temy[k] = i
+        if fmt == "storis":
+            for pole in ("chto", "stiker"):
+                if not e.get(pole):
+                    preduprezhdeniya.append(f"{i}: у сторис пусто {pole} — что снять и какой стикер")
         if fmt == "threads" and len(e.get("tekst") or "") > 500:
             osh.append(f"{i}: Threads до 500 знаков")
+    vse_id = {e.get("id") for e in ed}
+    for e in ed:
+        if e.get("svyaz") and e["svyaz"] not in vse_id:
+            osh.append(f"{e.get('id')}: svyaz {e['svyaz']} — такого номера в плане нет")
     return osh, preduprezhdeniya
 
 
@@ -133,6 +141,8 @@ def pokazat(a):
         if p.get(pole):
             v = p[pole]
             s.append(f"{imya}: " + (", ".join(f"{IMYA.get(k, k)} {x}" for k, x in v.items()) if isinstance(v, dict) else str(v)))
+    if p.get("gipotezy"):
+        s += ["", "**Гипотезы** (в мозге пусто, взял из рынка — поправь, если не так):"] + [f"- {g}" for g in p["gipotezy"]]
     nedeli = {}
     for e in ed:
         d = datetime.date.fromisoformat(e["data"])
@@ -141,7 +151,8 @@ def pokazat(a):
         s += ["", f"## Неделя {n}: {gr[0]['data']} — {gr[-1]['data']}", "",
               "| № | Дата | Формат | Цель | Тема | Хук / текст | Язык | Призыв | Статус |", "|---|---|---|---|---|---|---|---|---|"]
         for e in gr:
-            t = (e.get("huk") or e.get("tekst") or e.get("chto") or "").replace("|", "/").replace("\n", " ")
+            t = (e.get("huk") or e.get("tekst") or " · ".join(x for x in (e.get("chto"), e.get("stiker") and "стикер: " + e["stiker"]) if x)
+                 or "").replace("|", "/").replace("\n", " ")
             s.append(f"| {e['id']} | {e['data'][5:]} | {IMYA[e['format']]} | {e.get('cel', '')} | {(e.get('tema') or '').replace('|', '/')} | "
                      f"{t[:140]} | {e.get('yazyk', '')} | {(e.get('prizyv') or '').replace('|', '/')} | {e.get('status', 'plan')} |")
     out = f.with_suffix(".md")

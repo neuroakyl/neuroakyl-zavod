@@ -2,7 +2,7 @@
 
   py konkurenty.py poisk "запрос1, запрос2" [--skolko 20] [--da USD] [--fake]   аккаунты по словам ниши → кандидаты.json
   py konkurenty.py otbor                                                       кандидаты коротко + флаги «магазин? клиент?» → Claude пишет отбор.json
-  py konkurenty.py otbor --proverit | --utverdit                               проверить отбор.json | записать «да» человека
+  py konkurenty.py otbor --proverit | --utverdit "ответ человека дословно"     проверить отбор.json | записать «да» человека
   py konkurenty.py sbor nik1 nik2 … [--rilsov 30] [--da USD] [--fake] [--svoi] рилсы каждого → <ник>/reels.json
   py konkurenty.py reiting                                                     рейтинг аккаунтов и залётов → рейтинг-ГГГГ-ММ-ДД.md
   py konkurenty.py smeta poisk|sbor …                                          сколько стоит, ничего не тратит
@@ -142,6 +142,7 @@ FLAGI = {"магазин?": r"магазин|shop|store|опт\b|оптом|до
          "поставщик?": r"поставщик|оборудован|материал|расходник|запчаст|производств|завод\b|дистрибьют",
          "СМИ/афиша?": r"новост|news|афиша|журнал|медиа|подслушано|типичн|паблик|мемы",
          "работа?": r"ваканси|работа в|ищем|требуется|hr\b|рекрут",
+         "клиент?": r"мама|мамочк|lifestyle|лайфстайл|влог|vlog|мой путь|мой опыт|мой отзыв|покупатель|пациент",
          "для профи?": r"для врачей|для мастеров|для стоматологов|для специалистов|повышени[ея] квалиф|b2b|для бизнеса|франшиз"}
 
 
@@ -177,15 +178,16 @@ def otbor_oshibki(o):
         if x.get("to_zhe") is not True:
             osh.append(f"@{n}: to_zhe не true — не конкурент, перенеси в vybrosheno")
     if not 5 <= len(da) <= 12:
-        osh.append(f"конкурентов {len(da)}, нужно 8–10 (минимум 5, если ниша маленькая)")
-    if not any(x.get("krug") == "прямой" for x in da):
-        osh.append("нет ни одного прямого конкурента (то же самое, тот же город или язык)")
+        osh.append(f"конкурентов {len(da)}: нужно 8–10 (от 5 в маленькой нише, до 12). Лишних — в zapas")
+    if not any(x.get("krug") == "прямой" for x in da) and not (o.get("pryamyh_net") or "").strip():
+        osh.append("нет ни одного прямого конкурента (то же самое там, где человек продаёт). Правда нет — "
+                   "поле pryamyh_net с причиной, не натягивай чужого")
     return osh
 
 
 def otbor(a):
     o = otbor_chitat()
-    if a.proverit or a.utverdit:
+    if a.proverit or a.utverdit is not None:
         if o is None:
             sys.exit(f"нет {OTBOR}: сначала напиши его (формат — модули/конкуренты.md, шаг 4)")
         osh = otbor_oshibki(o)
@@ -194,8 +196,12 @@ def otbor(a):
             for x in osh:
                 print("  -", x)
             sys.exit(1)
-        if a.utverdit:
+        if a.utverdit is not None:
+            otvet = (a.utverdit or "").strip()
+            if len(otvet) < 2 or otvet.startswith("-"):
+                sys.exit('нужен ответ человека дословно: otbor --utverdit "да, собирай". Без его ответа в чате не запускай.')
             o["utverzhdeno"] = datetime.date.today().isoformat()
+            o["otvet_cheloveka"] = otvet
             OTBOR.write_text(json.dumps(o, ensure_ascii=False, indent=1), encoding="utf-8")
             print(f"✓ отбор утверждён человеком ({o['utverzhdeno']}): sbor возьмёт эти ники")
         else:
@@ -203,7 +209,7 @@ def otbor(a):
         return
     f = PAPKA / "кандидаты.json"
     if not f.exists():
-        sys.exit("нет кандидаты.json: poisk, или впиши ники сам прямо в отбор.json (источник «человек» или «поиск в интернете»)")
+        sys.exit("нет кандидаты.json: poisk, или впиши найденных бесплатно в кандидаты.json (формат — модули/конкуренты.md, шаг 3)")
     kand = json.loads(f.read_text(encoding="utf-8"))
     print(f"{len(kand)} кандидатов. У каждого ответь: продаёт то же, что человек, той же аудитории? Нет — в vybrosheno с причиной.")
     for p in sorted(kand, key=lambda p: -(p.get("followersCount") or 0)):
@@ -218,7 +224,7 @@ def sbor(a):
     niki = [n.strip().lstrip("@").rstrip("/").split("/")[-1] for n in a.chto if n.strip()]
     if not niki:
         sys.exit("нужны ники: sbor nik1 nik2 …")
-    if not a.svoi and not a.fake:  # деньги только на проверенных конкурентов
+    if not a.svoi:  # деньги только на проверенных конкурентов (и заглушка тоже: мусор не должен попасть в рейтинг)
         o = otbor_chitat()
         if not o or not o.get("utverzhdeno"):
             sys.exit("сначала отбор: otbor → отбор.json → otbor --proverit → «да» человека → otbor --utverdit. "
@@ -262,7 +268,7 @@ def reiting(a):
         span = max(1, (datetime.date.fromisoformat(dni[-1]) - datetime.date.fromisoformat(dni[0])).days) if len(dni) > 1 else 7
         er = statistics.median(((r.get("likesCount") or 0) + (r.get("commentsCount") or 0)) / prosmotry(r) for r in rs)
         akk.append({"nik": nik, "podp": (kand.get(nik) or {}).get("followersCount"), "rilsov": len(rs), "med": int(med),
-                    "v_nedelyu": round(len(rs) / span * 7, 1), "er": er})
+                    "v_nedelyu": round(len(rs) / span * 7, 1), "er": er, "posl": dni[-1] if dni else ""})
         for r in rs:
             x = prosmotry(r) / med if med else 0
             zalety.append({"nik": nik, "x": x, "v": prosmotry(r), "url": r.get("url", ""), "dlit": r.get("videoDuration"),
@@ -274,8 +280,10 @@ def reiting(a):
     top = sorted((z for z in zalety if z["x"] >= 2), key=lambda z: (-z["x"], -z["v"]))[:30]
     d = datetime.date.today().isoformat()
     s = [f"# Конкуренты: рейтинг {d}", "", "Залёт — рилс, набравший в 2+ раза больше медианы своего аккаунта: тема и хук доказаны у этой аудитории.",
-         "", "## Аккаунты (по медиане просмотров)", "| Аккаунт | Подписчики | Рилсов | Медиана | В неделю | Вовлечённость |", "|---|---|---|---|---|---|"]
-    s += [f"| @{x['nik']} | {x['podp'] or '—'} | {x['rilsov']} | {x['med']} | {x['v_nedelyu']} | {x['er'] * 100:.1f}% |" for x in akk]
+         "", "## Аккаунты (по медиане просмотров)", "| Аккаунт | Подписчики | Рилсов | Медиана | В неделю | Вовлечённость | Последний рилс |", "|---|---|---|---|---|---|---|"]
+    mert = (datetime.date.today() - datetime.timedelta(days=14)).isoformat()
+    s += [f"| @{x['nik']} | {x['podp'] or '—'} | {x['rilsov']} | {x['med']} | {x['v_nedelyu']} | {x['er'] * 100:.1f}% | "
+          f"{x['posl']}{' ⚠ не живой: в разбор не брать' if x['posl'] and x['posl'] < mert else ''} |" for x in akk]
     s += ["", "## Залёты (×медиана)", "| × | Просмотры | Коммент. | Сек | Аккаунт | Подпись | Ссылка |", "|---|---|---|---|---|---|---|"]
     s += [f"| {z['x']:.1f} | {z['v']} | {z['kom']} | {z['dlit'] or '—'} | @{z['nik']} | {z['tekst'].replace('|', '/')} | {z['url']} |" for z in top]
     s += ["", "## Что дальше (делает Claude, модуль `конкуренты.md`)",
@@ -308,6 +316,6 @@ ap.add_argument("--fake", action="store_true")
 ap.add_argument("--zanovo", action="store_true")
 ap.add_argument("--svoi", action="store_true")
 ap.add_argument("--proverit", action="store_true")
-ap.add_argument("--utverdit", action="store_true")
+ap.add_argument("--utverdit", nargs="?", const="", default=None)
 A = ap.parse_args()
 {"poisk": poisk, "otbor": otbor, "sbor": sbor, "reiting": reiting, "smeta": smeta_cmd}[A.cmd](A)
