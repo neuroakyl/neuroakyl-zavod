@@ -271,7 +271,9 @@ def geroi(p, a):
     if a.zanovo:
         zanovo(p, "geroi", a.zanovo.split(","))
     with cf.ThreadPoolExecutor(3) as ex:
-        list(ex.map(lambda g: kartinka(p, pr, s, g["id"], g.get("promt") or g["opisanie"], g.get("refy", []), "geroi", a, kassa),
+        # свои фото героя (поле foto) — главный референс лица: без них образ выходит «не похож»
+        list(ex.map(lambda g: kartinka(p, pr, s, g["id"], g.get("promt") or g["opisanie"],
+                                       g.get("refy") or ([g["id"]] if g.get("foto") else []), "geroi", a, kassa),
                     [g for g in pr.get("geroi", []) if not list((p / "geroi").glob(g["id"] + ".*"))]))
 
 
